@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>『饒舌な動植物たち』関連書籍インタラクティブ探索</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Visualization & Content Choices:
+        - Report Info: テーマ別に分類された推奨書籍。
+        - Goal: 利用者がテーマ別に書籍を探索し、概要を把握できるようにする。
+        - Viz/Presentation Method:
+            - 書籍リスト: インタラクティブなカードグリッド (HTML/Tailwind + JS)。
+            - 書籍詳細: モーダル (HTML/Tailwind + JS)。
+            - テーマ別概要: 棒グラフ (Chart.js/Canvas)。
+        - Interaction:
+            - カード: クリックで詳細表示。
+            - タブ/グラフの棒: クリックで書籍グリッドをフィルタリング。
+            - 検索: テキスト入力で書籍グリッドをフィルタリング。
+        - Justification: 報告書から関連書籍を発見するための複数の直感的な方法を提供。
+        - Library/Method: Chart.js (棒グラフ用)。インタラクションとDOM操作はすべてVanilla JS。
+        - CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+            background-color: #F5F5DC; /* Beige */
+            color: #4A3B31; /* Darker Brown for text */
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-button.active, .nav-button:hover {
+            border-bottom-color: #E07A5F; /* Muted Terracotta */
+            color: #E07A5F;
+        }
+        .book-card {
+            background-color: #FFFFFF;
+            border: 1px solid #D2B48C; /* Soft Brown */
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .book-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .modal-content {
+            background-color: #FFF8DC; /* Cornsilk - slightly warmer white */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 700px; /* Adjusted max-width for better fit */
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px; /* Base height */
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F5F5DC; /* Beige */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #D2B48C; /* Soft Brown */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #A0522D; /* Darker Brown */
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-[#A0522D]">『饒舌な動植物たち』に共鳴する書物</h1>
+            <p class="text-md text-[#4A3B31] mt-2">カレン・バッカー氏の著作に触発された、自然との対話を深めるためのインタラクティブ読書案内</p>
+        </header>
+
+        <nav class="mb-8">
+            <div class="flex flex-wrap justify-center gap-2 md:gap-4 mb-4" id="themeTabs">
+                </div>
+            <div class="flex justify-center mt-4">
+                <input type="text" id="searchInput" placeholder="書籍名やキーワードで検索..." class="w-full max-w-md p-2 border border-[#D2B48C] rounded-lg focus:ring-2 focus:ring-[#E07A5F] focus:border-transparent outline-none">
+            </div>
+        </nav>
+
+        <section id="appIntroduction" class="mb-8 p-6 bg-white rounded-lg shadow">
+            <h2 class="text-2xl font-semibold text-[#A0522D] mb-3">ようこそ！</h2>
+            <p class="text-[#4A3B31] leading-relaxed">
+                このアプリケーションは、カレン・バッカー氏の著作『饒舌な動植物たち』のテーマに共鳴する書籍群をインタラクティブに探索するためのツールです。
+                動物のコミュニケーション、植物の知覚、テクノロジーの役割、倫理的考察など、多岐にわたるテーマの書籍を紹介しています。
+                上のタブや検索バー、下のグラフを使って、興味のある分野の書籍を見つけてみましょう。各書籍カードをクリックすると、より詳しい情報が表示されます。
+                自然界の「声」に耳を澄ませ、新たな発見の旅をお楽しみください。
+            </p>
+        </section>
+
+        <section id="chartSection" class="mb-12">
+            <h2 class="text-2xl font-semibold text-center text-[#A0522D] mb-4">テーマ別 書籍数</h2>
+            <div class="chart-container bg-white p-4 rounded-lg shadow">
+                <canvas id="themeChart"></canvas>
+            </div>
+            <p class="text-sm text-center text-[#4A3B31] mt-2">グラフの棒をクリックすると、該当テーマの書籍が絞り込まれます。</p>
+        </section>
+
+        <main id="bookGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        </main>
+    </div>
+
+    <div id="bookModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
+        <div class="modal-content max-w-2xl w-full p-6 rounded-lg shadow-xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="modalTitle" class="text-2xl font-bold text-[#A0522D]"></h2>
+                <button id="closeModal" class="text-2xl font-bold text-[#A0522D] hover:text-[#E07A5F]">&times;</button>
+            </div>
+            <p class="text-sm text-gray-600 mb-1"><strong>原題:</strong> <span id="modalOriginalTitle"></span></p>
+            <p class="text-sm text-gray-600 mb-3"><strong>著者:</strong> <span id="modalAuthor"></span></p>
+            <div id="modalDescription" class="text-[#4A3B31] leading-relaxed mb-4"></div>
+            <p class="text-sm text-gray-600"><strong>主要テーマ:</strong> <span id="modalThemes"></span></p>
+        </div>
+    </div>
+
+    <script>
+        const books = [
+            {
+                id: 1,
+                japaneseTitle: "饒舌な動植物たち",
+                originalTitle: "The Sounds of Life: How Digital Technology Is Revealing the Hidden World of Animal Communication",
+                author: "カレン・バッカー",
+                themes: ["動物のコミュニケーション", "植物のコミュニケーション/感覚", "生物音響学", "デジタル技術/AIの役割", "人間活動の影響", "野生の声を聴く", "デジタルな耳"],
+                description: "デジタル技術の革新がいかにして動物たちの隠された音響コミュニケーションの世界を明らかにしつつあるかを描き出し、生物音響学の分野への貴重な洞察を提供。クジラの歌から植物やサンゴの微細な活動まで、多様な『饒舌な』表現を詳述。",
+                detailedSummary: "カレン・バッカー氏の画期的な著作。動物コミュニケーションの多様性（クジラの歌、ミツバチのダンス、ゾウの超低周波音、カメの発声）、植物やサンゴにおける音を介した活動、人間活動が発する騒音の生態系への影響などを核心的なテーマとする。AIが自然音のデータセット分析を支援する可能性も探求（特に第9章「地球生命のインターネット」）。"
+            },
+            {
+                id: 2,
+                japaneseTitle: "生物界は騒がしい 音と共に進化した、生き物とヒトの秘められた営み",
+                originalTitle: "Sounds Wild and Broken: The Remarkable Story of How We Hear and Why It Matters",
+                author: "D.G. ハスケル",
+                themes: ["生物音響学", "音の進化", "人間活動の影響", "哲学的考察", "野生の声を聴く"],
+                description: "生物学的領域における音の進化の歴史を掘り下げ、自然の音風景の美しさを称賛し、人為的騒音の破壊的な影響を批判的に検証。歴史、生態学、生理学、哲学、生物学を織り交ぜる。",
+                detailedSummary: "バッカー氏の著作に対する重要な文学的・科学的対応物。きらめく散文で称賛され、鳥、昆虫、自然要素、人間の声や楽器が生み出す音を探求。中心テーマは「自然破壊による生態系の沈黙」。9.11後やパンデミック期の船舶交通量減少に伴うクジラのストレスホルモン低下事例などを提示。音風景の劣化を社会正義の問題とも結びつける。"
+            },
+            {
+                id: 3,
+                japaneseTitle: "動物たちは何をしゃべっているのか？",
+                originalTitle: "N/A",
+                author: "山極 寿一, 鈴木 俊貴",
+                themes: ["動物のコミュニケーション", "動物言語学", "比較行動学", "動物界の会話"],
+                description: "動物の『発話』と『雄弁さ』に直接的に取り組む。霊長類学者と動物言語学者の対談形式で、ミツバチの振動言語や鳥の鳴き声の統語論などを探求。",
+                detailedSummary: "アクセスしやすい対談形式。ミツバチの振動言語、鳥の鳴き声の統語論、動物の心の複雑さ、言語の進化的起源、現代の人間のコミュニケーションパターンへの批評までダイナミックに探求。シジュウカラの「単語」と「文法」に関する鈴木氏の研究も紹介。各章末に「まとめ」あり。"
+            },
+            {
+                id: 4,
+                japaneseTitle: "僕には鳥の言葉がわかる",
+                originalTitle: "N/A",
+                author: "鈴木 俊貴",
+                themes: ["動物のコミュニケーション (鳥類)", "動物言語学", "フィールド研究", "動物界の会話", "デジタルな耳"],
+                description: "鳥類のコミュニケーション研究に関する詳細な個人的記述。シジュウカラが20以上の『単語』の語彙を使って『文』を構成することを証明する著者の道のりを描く。",
+                detailedSummary: "魅力的でユーモラスなスタイルの科学エッセイ。著者自身のイラストやQRコードによる鳴き声再生機能も。広範な観察と再生実験（スピーカー使用）など、現代の動物言語研究の技術的基盤を浮き彫りにする。シジュウカラにおける統語論、指示的意味、「ジェスチャー」に関する研究を紹介。「新しい動物言語学」の誕生に貢献。"
+            },
+            {
+                id: 5,
+                japaneseTitle: "言葉を使う動物たち",
+                originalTitle: "Animal Languages (Original: Dierentalen)",
+                author: "エヴァ・メイヤー",
+                themes: ["動物のコミュニケーション", "動物言語学", "哲学的考察", "倫理", "動物界の会話", "言葉を超えて"],
+                description: "動物のコミュニケーションに関する独特の哲学的および言語学的探求。動物も『話し』、複雑なコミュニケーションシステムを持つと主張。",
+                detailedSummary: "動物が文法要素や未来の出来事を指す能力を含むコミュニケーションシステムを持つと主張。人間中心の偏見に挑戦し、「言語とは何か？」を問う。身体言語、警告音、ダンス、体色変化などを検証。ヴィトゲンシュタインの「言語ゲーム」の概念と結びつける。動物の言語理解が人間の視点を変え、より共生的関係を育むと示唆。"
+            },
+            {
+                id: 6,
+                japaneseTitle: "魚の耳で海を聴く: 海洋生物音響学の世界歌うアンコウから、シャチの方言、海中騒音まで",
+                originalTitle: "Sing Like Fish: How Sound Rules Life Underwater",
+                author: "アモリナ・キングドン",
+                themes: ["海洋生物音響学", "動物のコミュニケーション", "人間活動の影響 (海中騒音)", "動物界の会話", "野生の声を聴く"],
+                description: "水生生物音響学、水中コミュニケーションの多様性、人為的騒音の脅威に焦点。アンコウの発声からシャチの方言まで、賑やかな水中の会話を明らかにする。",
+                detailedSummary: "観察記録と入門書の要素を組み合わせる。海洋動物が音を航行、配偶、索餌、捕食者回避にどう利用するかを探求。海中騒音問題（大型船プロペラ、エアガンなど）が海洋生物のコミュニケーションを妨害する様子を詳述。水中マイクや高度な録音・分析技術の広範な使用を示唆。"
+            },
+            {
+                id: 7,
+                japaneseTitle: "野生のオーケストラが聴こえる―― サウンドスケープ生態学と音楽の起源",
+                originalTitle: "The Great Animal Orchestra: Finding the Origins of Music in the World's Wild Places",
+                author: "バーニー・クラウス",
+                themes: ["サウンドスケープ生態学", "生物音響学", "音楽の起源", "人間活動の影響", "野生の声を聴く"],
+                description: "音風景生態学の基礎的著作。『バイオフォニー』（生物の集合的な音）の概念を導入し、自然の音風景がオーケストラのように複雑に構成されていると主張。",
+                detailedSummary: "音楽家から自然音録音家に転身した著者が、「バイオフォニー」を探求。自然の音風景が人間の音楽の起源と関連すると仮定。人間が生み出す騒音（「ノイズの霧」）と生息地喪失の壊滅的影響に警鐘。40年以上にわたり録音した自然環境の半数以上が沈黙または劣化。専用ウェブサイトで録音を体験可能。"
+            },
+            {
+                id: 8,
+                japaneseTitle: "植物はそこまで知っている 感覚に満ちた世界に生きる植物たち",
+                originalTitle: "What a Plant Knows: A Field Guide to the Senses of Smell, Sight, Touch, and Sound",
+                author: "ダニエル・チャモヴィッツ",
+                themes: ["植物の感覚", "植物のコミュニケーション", "分子生物学", "沈黙の雄弁"],
+                description: "植物の感覚に焦点を当てた独創的な作品。植物が環境をどのように認識し、相互作用するかを詳述し、植物の『雄弁さ』に取り組む。",
+                detailedSummary: "植物における人間の感覚との類似物（視覚、嗅覚、触覚、聴覚（振動反応）、位置感覚、記憶）を体系的に探求。「遺伝学など最新の科学的な発見」を利用。簡潔でわかりやすい訳文で、不必要な擬人化を回避。植物が隣人の苦痛信号を「嗅ぎ」防御化学物質を生成し、過去の環境ストレスを「記憶」する能力などを紹介。"
+            },
+            {
+                id: 9,
+                japaneseTitle: "マザーツリー 森に隠された「知性」をめぐる冒険",
+                originalTitle: "Finding the Mother Tree: Discovering the Wisdom of the Forest",
+                author: "スザンヌ・シマード",
+                themes: ["植物のコミュニケーション (菌根ネットワーク)", "森林生態学", "植物の知性", "沈黙の雄弁", "デジタルな耳"],
+                description: "広大な地下の菌根ネットワークを介した樹木間コミュニケーションに関する画期的かつ個人的な記述。森林における『沈黙の雄弁さ』と相互連結性を明らかにする。",
+                detailedSummary: "科学的発見と個人的回想録の融合。「菌根ネットワーク」に関する30年以上の研究を詳述。「マザーツリー」が炭素、水、栄養素、防御信号を移転し血縁者等を育む概念を紹介。放射性同位体実験やDNAマイクロサテライト分析など高度技術を採用。森林が協調的コミュニケーションネットワークであることを示す。"
+            },
+            {
+                id: 10,
+                japaneseTitle: "植物は〈知性〉をもっている 20の感覚で思考する生命システム",
+                originalTitle: "Brilliant Green: The Surprising History and Science of Plant Intelligence",
+                author: "ステファノ・マンクーゾ, アレッサンドラ・ヴィオラ",
+                themes: ["植物の知性", "植物の感覚", "植物のコミュニケーション", "沈黙の雄弁"],
+                description: "植物の知性の一形態を説得力をもって主張。植物の複雑な行動と適応戦略を通じて、植物の生命の『雄弁さ』を探求。",
+                detailedSummary: "植物が互いに「予測」「学習」「記憶」「コミュニケーション」できると主張。植物が持つとされる20の感覚と洗練された問題解決能力を掘り下げ、植物の「驚愕の知的世界」を明らかに。植物が分散型の知性を持つと示唆。"
+            },
+             {
+                id: 11,
+                japaneseTitle: "そもそも植物とは何か",
+                originalTitle: "Qu'est-ce qu'une plante?",
+                author: "フロランス・ビュルガ",
+                themes: ["植物存在論", "哲学的考察", "人間中心主義批判", "植物倫理", "沈黙の雄弁", "言葉を超えて"],
+                description: "植物存在の根本的な性質に関する厳密な哲学的探求。植物の生命をどのように概念化するかについて批判的なレンズを提供。",
+                detailedSummary: "現象学的哲学を用いて「植物の生命と存在」を検証。植物存在の根本的側面（死の性質、個性、中心の有無）を問う。擬人化された解釈からの脱却を促し、「植物の倫理的な価値と法的な権利」にも踏み込む。植物を「劣った」動物ではなく、根本的に異なる種類の生物として尊重する理解を提唱。"
+            },
+            {
+                id: 12,
+                japaneseTitle: "生き物と音の事典",
+                originalTitle: "N/A",
+                author: "生物音響学会 (編)",
+                themes: ["生物音響学全般", "デジタル技術/AIの役割 (音響分析)", "デジタルな耳", "野生の声を聴く"],
+                description: "生物音響学に関する包括的な国内資料。広範囲の種と音響現象を網羅し、本質的に技術的進歩に基づいて構築されている。",
+                detailedSummary: "コウモリやイルカの反響定位、動物の発声、聴覚・発声の生理学的メカニズムなどを解説。「周波数分析と波形合成」「生物の音の分析に使われるソフトウェア」「テレマイクによる音響計測」など、現代の生物音響学を支える洗練された技術的方法を詳述。関連音声ファイルへのアクセスも可能な場合がある。"
+            },
+            {
+                id: 13,
+                japaneseTitle: "ロボット学者、植物に学ぶ―自然に秘められた未来のテクノロジー",
+                originalTitle: "The Genius of Plants / La Natura Geniale",
+                author: "バルバラ・マッツォライ",
+                themes: ["生物模倣技術 (植物ロボット)", "植物の能力応用", "テクノロジー開発", "デジタルな耳", "沈黙の雄弁"],
+                description: "生物に着想を得たロボット工学の分野を探求。特に植物の根の能力をモデルにしたロボット「プラントイド」に焦点。",
+                detailedSummary: "植物の動き、感覚能力、成長パターンの深い理解が新しいロボット設計にどうインスピレーションを与えるかを詳述。「生物学×テクノロジー」の成果豊かな協力の証。プラントイド開発は生物学的洞察から生まれた技術的成果。"
+            },
+            {
+                id: 14,
+                japaneseTitle: "動物の解放 改訂版",
+                originalTitle: "Animal Liberation: The Definitive Classic of the Animal Movement",
+                author: "ピーター・シンガー",
+                themes: ["動物倫理", "功利主義", "種差別批判", "言葉を超えて"],
+                description: "現代の動物倫理における基礎的テキスト。苦痛を感じる能力に基づいて動物に道徳的配慮を拡張するという議論は、彼らの『雄弁な』表現を議論する際に深く関連。",
+                detailedSummary: "功利主義的枠組みを用い、種差別（種に基づく不当な差別）に反対。苦痛と快楽を感じる能力が道徳的配慮に値する利益を持つための基盤と仮定。工場畜産や多くの動物実験を批判。「利益に対する平等な配慮」が中心教義。動物福祉運動、菜食主義/完全菜食主義に大きな影響。"
+            },
+            {
+                id: 15,
+                japaneseTitle: "どうしてそうなった!? いきものの名前 奥深い和名と学名の意味・しくみ・由来",
+                originalTitle: "N/A",
+                author: "丸山 貴史",
+                themes: ["名称の由来 (和名・学名)", "言語と文化", "生物分類", "名前の力"],
+                description: "和名と学名の両方を網羅し、動植物の名前に埋め込まれた語源と文化的意義の魅力的な世界を掘り下げている。",
+                detailedSummary: "命名規則、リンネの二名法から、風変わりで文化的に示唆に富む名前（長い名前、誤解を招く名前、ユーモラスな名前、「下品な名前」）まで提示。名前が生物の特徴、人間の認識、歴史的文脈、気まぐれをどう反映するかを示す。「名前のもつ意味や由来を知ることで、生きものの特徴や生活が見えてくる」ことが核心的価値。"
+            }
+        ];
+
+        const themeJaToEn = {
+            "すべて": "all",
+            "野生の声を聴く": "wild_sounds",
+            "動物界の会話": "animal_conversations",
+            "沈黙の雄弁": "plant_perception",
+            "デジタルな耳": "tech_role",
+            "言葉を超えて": "philosophical_ethical",
+            "名前の力": "power_of_naming"
+        };
+        
+        const allThemes = ["すべて", ...new Set(books.flatMap(book => book.themes).filter(theme => Object.keys(themeJaToEn).includes(theme) || !isNaN(parseInt(theme.charAt(0)))))];
+        // Filter themes to only include those explicitly in themeJaToEn or thematic categories from the report.
+        // The report themes are: 野生の声を聴く, 動物界の会話, 沈黙の雄弁, デジタルな耳, 言葉を超えて, 名前の力.
+        const primaryThemesForTabsAndChart = ["すべて", "野生の声を聴く", "動物界の会話", "沈黙の雄弁", "デジタルな耳", "言葉を超えて", "名前の力"];
+
+
+        const bookGrid = document.getElementById('bookGrid');
+        const searchInput = document.getElementById('searchInput');
+        const themeTabsContainer = document.getElementById('themeTabs');
+        const bookModal = document.getElementById('bookModal');
+        const closeModalButton = document.getElementById('closeModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalOriginalTitle = document.getElementById('modalOriginalTitle');
+        const modalAuthor = document.getElementById('modalAuthor');
+        const modalDescription = document.getElementById('modalDescription');
+        const modalThemes = document.getElementById('modalThemes');
+        let activeTheme = "すべて";
+        let themeChartInstance = null;
+
+        function renderBooks(filteredBooks) {
+            bookGrid.innerHTML = '';
+            filteredBooks.forEach(book => {
+                const card = document.createElement('div');
+                card.className = 'book-card p-6 rounded-lg shadow-lg cursor-pointer flex flex-col justify-between';
+                card.innerHTML = `
+                    <div>
+                        <h3 class="text-xl font-semibold mb-2 text-[#A0522D]">${book.japaneseTitle}</h3>
+                        <p class="text-sm text-gray-700 mb-1"><strong>著者:</strong> ${book.author}</p>
+                        <p class="text-sm text-gray-600 mb-3 line-clamp-3">${book.description}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 mb-2"><strong>主要テーマ:</strong> ${book.themes.filter(t => primaryThemesForTabsAndChart.includes(t) && t !== "すべて").slice(0,2).join(', ')}</p>
+                        <button class="mt-2 text-[#E07A5F] hover:underline text-sm view-details-btn">詳細を見る &rarr;</button>
+                    </div>
+                `;
+                card.addEventListener('click', () => openModal(book));
+                bookGrid.appendChild(card);
+            });
+        }
+
+        function filterAndRenderBooks() {
+            const searchTerm = searchInput.value.toLowerCase();
+            let filtered = books;
+
+            if (activeTheme !== "すべて") {
+                filtered = filtered.filter(book => book.themes.includes(activeTheme));
+            }
+
+            if (searchTerm) {
+                filtered = filtered.filter(book => 
+                    book.japaneseTitle.toLowerCase().includes(searchTerm) ||
+                    book.author.toLowerCase().includes(searchTerm) ||
+                    book.description.toLowerCase().includes(searchTerm) ||
+                    (book.originalTitle && book.originalTitle.toLowerCase().includes(searchTerm))
+                );
+            }
+            renderBooks(filtered);
+        }
+
+        function createThemeTabs() {
+            primaryThemesForTabsAndChart.forEach(theme => {
+                const button = document.createElement('button');
+                button.className = 'nav-button px-3 py-2 md:px-4 md:py-2 text-sm md:text-base font-medium text-gray-700 rounded-md';
+                button.textContent = theme;
+                if (theme === "すべて") {
+                    button.classList.add('active');
+                }
+                button.addEventListener('click', () => {
+                    activeTheme = theme;
+                    document.querySelectorAll('#themeTabs .nav-button').forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    filterAndRenderBooks();
+                    updateChartSelection(theme);
+                });
+                themeTabsContainer.appendChild(button);
+            });
+        }
+        
+        function openModal(book) {
+            modalTitle.textContent = book.japaneseTitle;
+            modalOriginalTitle.textContent = book.originalTitle || 'N/A';
+            modalAuthor.textContent = book.author;
+            modalDescription.innerHTML = book.detailedSummary ? book.detailedSummary.replace(/\n/g, '<br>') : book.description.replace(/\n/g, '<br>');
+            modalThemes.textContent = book.themes.filter(t => primaryThemesForTabsAndChart.includes(t) && t !== "すべて").join(', ');
+            bookModal.classList.remove('hidden');
+        }
+
+        closeModalButton.addEventListener('click', () => {
+            bookModal.classList.add('hidden');
+        });
+        bookModal.addEventListener('click', (event) => {
+            if (event.target === bookModal) {
+                 bookModal.classList.add('hidden');
+            }
+        });
+
+
+        function createThemeChart() {
+            const ctx = document.getElementById('themeChart').getContext('2d');
+            const themeCounts = {};
+            primaryThemesForTabsAndChart.forEach(theme => {
+                if (theme === "すべて") return;
+                themeCounts[theme] = books.filter(book => book.themes.includes(theme)).length;
+            });
+
+            const chartData = {
+                labels: Object.keys(themeCounts),
+                datasets: [{
+                    label: '書籍数',
+                    data: Object.values(themeCounts),
+                    backgroundColor: '#D2B48C', // Soft Brown
+                    borderColor: '#A0522D', // Darker Brown
+                    borderWidth: 1,
+                    hoverBackgroundColor: '#E07A5F' // Muted Terracotta
+                }]
+            };
+
+            themeChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1,
+                                color: '#4A3B31' 
+                            },
+                            grid: {
+                                color: '#EAE0D6' // Lighter beige for grid lines
+                            }
+                        },
+                        x: {
+                           ticks: {
+                                color: '#4A3B31',
+                                callback: function(value, index, values) {
+                                    const label = this.getLabelForValue(value);
+                                    if (label.length > 10) { // Wrap long labels
+                                        return label.match(/.{1,8}/g); // Split into chunks of 8 chars
+                                    }
+                                    return label;
+                                }
+                            },
+                             grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: '#4A3B31',
+                            titleColor: '#F5F5DC',
+                            bodyColor: '#F5F5DC',
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label.replace(/,/g, ''); // Remove commas from wrapped labels
+                                }
+                            }
+                        }
+                    },
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const clickedTheme = chartData.labels[elements[0].index];
+                            activeTheme = clickedTheme;
+                            document.querySelectorAll('#themeTabs .nav-button').forEach(btn => {
+                                btn.classList.remove('active');
+                                if (btn.textContent === clickedTheme) {
+                                    btn.classList.add('active');
+                                }
+                            });
+                            filterAndRenderBooks();
+                            updateChartSelection(clickedTheme, false); // Don't re-trigger chart update
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChartSelection(selectedTheme, triggerFilter = true) {
+            if (!themeChartInstance) return;
+            const datasets = themeChartInstance.data.datasets[0];
+            const backgroundColors = [];
+            const borderColors = [];
+
+            themeChartInstance.data.labels.forEach(label => {
+                if (label === selectedTheme) {
+                    backgroundColors.push('#E07A5F'); // Highlight color
+                    borderColors.push('#A0522D');
+                } else {
+                    backgroundColors.push('#D2B48C'); // Default color
+                    borderColors.push('#A0522D');
+                }
+            });
+            datasets.backgroundColor = backgroundColors;
+            datasets.borderColor = borderColors;
+            themeChartInstance.update();
+
+            if (triggerFilter) {
+                 // This part is handled by tab click or chart click directly
+            }
+        }
+
+
+        searchInput.addEventListener('input', filterAndRenderBooks);
+
+        createThemeTabs();
+        filterAndRenderBooks();
+        createThemeChart();
+    </script>
+</body>
+</html>
